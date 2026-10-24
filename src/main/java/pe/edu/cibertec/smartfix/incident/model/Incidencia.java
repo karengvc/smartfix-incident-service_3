@@ -28,7 +28,7 @@ public class Incidencia {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
 
-    private EstadoIncidencia estado = EstadoIncidencia.REPORTADA;
+    private EstadoIncidencia estado = EstadoIncidencia.RECIBIDO;
 
     private LocalDateTime fechaReporte = LocalDateTime.now();
     @NotNull(message = "El equipo es obligatorio")
@@ -37,10 +37,20 @@ public class Incidencia {
 
     private Long tecnicoId;
 
+    private Long solicitanteId;
+
+    @Column(length = 20)
+    private String canal;
+
+    @Column(length = 300)
+    private String motivoDevolucion;
+
+    private Integer reingresos = 0;
+
     @PrePersist
     public void antesDeGuardar() {
         if (estado == null) {
-            estado = EstadoIncidencia.REPORTADA;
+            estado = EstadoIncidencia.RECIBIDO;
         }
 
         if (fechaReporte == null) {

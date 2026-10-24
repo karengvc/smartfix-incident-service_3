@@ -1,4 +1,5 @@
 package pe.edu.cibertec.smartfix.incident.service;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -6,10 +7,17 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
-import pe.edu.cibertec.smartfix.incident.model.*;
+import pe.edu.cibertec.smartfix.incident.client.EquipoClient;
+import pe.edu.cibertec.smartfix.incident.client.EquipoDto;
+import pe.edu.cibertec.smartfix.incident.model.EstadoIncidencia;
+import pe.edu.cibertec.smartfix.incident.model.HistorialIncidencia;
+import pe.edu.cibertec.smartfix.incident.model.Incidencia;
+import pe.edu.cibertec.smartfix.incident.model.Prioridad;
 import pe.edu.cibertec.smartfix.incident.repository.HistorialIncidenciaRepository;
 import pe.edu.cibertec.smartfix.incident.repository.IncidenciaRepository;
+
 import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -23,10 +31,15 @@ class IncidenciaServiceTest {
     @Mock
     private HistorialIncidenciaRepository historialRepository;
 
+    @Mock
+    private EquipoClient equipoClient;
+
     @InjectMocks
     private IncidenciaService service;
 
     private Incidencia incidencia;
+    private final Actor tecnico = new Actor(2L, "TECNICO");
+    private final Actor cliente = new Actor(4L, "USUARIO");
 
     @BeforeEach
     void prepararDatos() {
@@ -36,71 +49,62 @@ class IncidenciaServiceTest {
         incidencia.setDescripcion("Equipo sin energia");
         incidencia.setPrioridad(Prioridad.ALTA);
         incidencia.setEquipoId(1L);
-        incidencia.setEstado(EstadoIncidencia.REPORTADA);
+        incidencia.setSolicitanteId(4L);
+        incidencia.setEstado(EstadoIncidencia.RECIBIDO);
     }
 
     @Test
-    void registrarIncidencia() {
-        when(repository.save(any(Incidencia.class)))
-                .thenAnswer(invocacion -> {
-                    Incidencia datos = invocacion.getArgument(0);
-                    datos.setId(1L);
-                    return datos;
-                });
-
-        Incidencia resultado = service.registrar(incidencia);
-
-        assertNotNull(resultado);
-        assertEquals(1L, resultado.getId());
-        assertEquals(EstadoIncidencia.REPORTADA, resultado.getEstado());
-
-        verify(repository).save(any(Incidencia.class));
-        verify(historialRepository).save(any(HistorialIncidencia.class));
-    }
-
-    @Test
-    void buscarIncidenciaPorId() {
-        when(repository.findById(1L))
-                .thenReturn(Optional.of(incidencia));
-
-        Incidencia resultado = service.buscarPorId(1L);
-
-        assertEquals("Computadora no enciende", resultado.getTitulo());
-        assertEquals(Prioridad.ALTA, resultado.getPrioridad());
-    }
-
-    @Test
-    void asignarTecnico() {
-        when(repository.findById(1L))
-                .thenReturn(Optional.of(incidencia));
-
+    void registrarCasoEnLinea() {
+        when(equipoClient.obtenerPorId(1L)).thenReturn(
+                new EquipoDto(1L, "Laptop", "Laptop", "Dell", "Latitude", "SN-1", "ACTIVO", "", 4L));
         when(repository.save(any(Incidencia.class)))
                 .thenAnswer(invocacion -> invocacion.getArgument(0));
 
-        Incidencia resultado = service.asignarTecnico(1L, 2L);
+        Incidencia resultado = service.registrar(incidencia, cliente);
 
-        assertEquals(2L, resultado.getTecnicoId());
-        assertEquals(EstadoIncidencia.ASIGNADA, resultado.getEstado());
-
+        assertEquals(EstadoIncidencia.RECIBIDO, resultado.getEstado());
+        assertEquals("ONLINE", resultado.getCanal());
+        assertEquals(4L, resultado.getSolicitanteId());
         verify(historialRepository).save(any(HistorialIncidencia.class));
     }
 
     @Test
-    void rechazarCambioDeEstadoInvalido() {
-        when(repository.findById(1L))
-                .thenReturn(Optional.of(incidencia));
+    void noRegistraEquipoDeOtroCliente() {
+        when(equipoClient.obtenerPorId(1L)).thenReturn(
+                new EquipoDto(1L, "Laptop", "Laptop", "Dell", "Latitude", "SN-1", "ACTIVO", "", 9L));
 
-        assertThrows(
-                ResponseStatusException.class,
-                () -> service.cambiarEstado(
-                        1L,
-                        EstadoIncidencia.CERRADA
-                )
-        );
-
+        assertThrows(ResponseStatusException.class,
+                () -> service.registrar(incidencia, cliente));
         verify(repository, never()).save(any(Incidencia.class));
-        verify(historialRepository, never())
-                .save(any(HistorialIncidencia.class));
+    }
+
+    @Test
+    void tecnicoTomaElCaso() {
+        when(repository.findById(1L)).thenReturn(Optional.of(incidencia));
+        when(repository.save(any(Incidencia.class)))
+                .thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        Incidencia resultado = service.tomar(1L, tecnico);
+
+        assertEquals(EstadoIncidencia.EN_ANALISIS, resultado.getEstado());
+        assertEquals(2L, resultado.getTecnicoId());
+    }
+
+    @Test
+    void tecnicoNoAvanzaCasoAjeno() {
+        incidencia.setEstado(EstadoIncidencia.EN_ANALISIS);
+        incidencia.setTecnicoId(3L);
+        when(repository.findById(1L)).thenReturn(Optional.of(incidencia));
+
+        assertThrows(ResponseStatusException.class,
+                () -> service.avanzar(1L, tecnico));
+    }
+
+    @Test
+    void soloSeDevuelveUnCasoFinalizado() {
+        when(repository.findById(1L)).thenReturn(Optional.of(incidencia));
+
+        assertThrows(ResponseStatusException.class,
+                () -> service.devolver(1L, "Sigue fallando", cliente));
     }
 }
-
