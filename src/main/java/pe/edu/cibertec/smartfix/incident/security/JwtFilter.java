@@ -59,7 +59,7 @@ public class JwtFilter extends OncePerRequestFilter {
             return Set.of();
         }
         if (metodo.equals("POST")) {
-            return Set.of(ADMIN, USUARIO);
+            return Set.of(ADMIN, TECNICO, USUARIO);
         }
         if (ruta.endsWith("/tomar")) {
             return Set.of(TECNICO);
